@@ -39,19 +39,26 @@ class Maploss(nn.Module):
 
 
 
-    def forward(self, gh_label, gah_label, p_gh, p_gah, mask):
-        gh_label = gh_label
-        gah_label = gah_label
-        p_gh = p_gh
-        p_gah = p_gah
+    def forward(self, gh_label, gh_pred, mask):
         loss_fn = torch.nn.MSELoss(reduce=False, size_average=False)
+        gh_label = gh_label.permute((3, 0, 1, 2))
+        gh_pred = gh_pred.permute((3, 0, 1, 2))
 
-        assert p_gh.size() == gh_label.size() and p_gah.size() == gah_label.size()
-        loss1 = loss_fn(p_gh, gh_label)
-        loss2 = loss_fn(p_gah, gah_label)
-        loss_g = torch.mul(loss1, mask)
-        loss_a = torch.mul(loss2, mask)
+        assert all([pred.size() == label.size() for (pred, label) in zip(gh_pred, gh_label)])
+        
+        # loss1 = loss_fn(p_gh, gh_label)
+        # loss2 = loss_fn(p_gah, gah_label)
+        # loss_g = torch.mul(loss1, mask)
+        # loss_a = torch.mul(loss2, mask)
+        
+        loss = [loss_fn(pred, label) for (pred, label) in zip(gh_pred, gh_label)]
+        loss = [torch.mul(ls, mask) for ls in loss]
 
-        char_loss = self.single_image_loss(loss_g, gh_label)
-        affi_loss = self.single_image_loss(loss_a, gah_label)
-        return char_loss/loss_g.shape[0] + affi_loss/loss_a.shape[0]
+        # char_loss = self.single_image_loss(loss_g, gh_label)
+        # affi_loss = self.single_image_loss(loss_a, gah_label)
+        
+        single_loss = [self.single_image_loss(ls, label) for (ls, label) in zip(loss, gh_label)]
+        res = sum([single_ls/ls.shape[0] for (single_ls, ls) in zip(single_loss, loss)])
+        return res
+        
+        # return char_loss/loss_g.shape[0] + affi_loss/loss_a.shape[0]

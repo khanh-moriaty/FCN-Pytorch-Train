@@ -39,13 +39,22 @@ class CRAFT(nn.Module):
         assert backbone in init_func, "This backbone architecture is not supported!"
         out_channels = init_func[backbone](pretrained, freeze)
         
-        num_class = 2
+        num_class = 15
+        
+        # self.conv_cls = nn.Sequential(
+        #     nn.Conv2d(out_channels, out_channels, kernel_size=3, padding=1), nn.ReLU(inplace=True),
+        #     nn.Conv2d(out_channels, out_channels, kernel_size=3, padding=1), nn.ReLU(inplace=True),
+        #     nn.Conv2d(out_channels, out_channels // 2, kernel_size=3, padding=1), nn.ReLU(inplace=True),
+        #     nn.Conv2d(out_channels // 2, out_channels // 2, kernel_size=1), nn.ReLU(inplace=True),
+        #     nn.Conv2d(out_channels // 2, num_class, kernel_size=1),
+        # )
+        
         self.conv_cls = nn.Sequential(
             nn.Conv2d(out_channels, out_channels, kernel_size=3, padding=1), nn.ReLU(inplace=True),
             nn.Conv2d(out_channels, out_channels, kernel_size=3, padding=1), nn.ReLU(inplace=True),
-            nn.Conv2d(out_channels, out_channels // 2, kernel_size=3, padding=1), nn.ReLU(inplace=True),
-            nn.Conv2d(out_channels // 2, out_channels // 2, kernel_size=1), nn.ReLU(inplace=True),
-            nn.Conv2d(out_channels // 2, num_class, kernel_size=1),
+            nn.Conv2d(out_channels, out_channels, kernel_size=3, padding=1), nn.ReLU(inplace=True),
+            nn.Conv2d(out_channels, out_channels, kernel_size=1), nn.ReLU(inplace=True),
+            nn.Conv2d(out_channels, num_class, kernel_size=1),
         )
 
         init_weights(self.upconv1.modules())

@@ -57,7 +57,6 @@ class GaussianTransformer(object):
         cv2.imwrite(os.path.join(images_folder, 'test_guassian.jpg'), threshhold_guassian)
 
     def add_region_character(self, image, target_bbox, regionbox=None):
-
         if np.any(target_bbox < 0) or np.any(target_bbox[:, 0] > image.shape[1]) or np.any(
                 target_bbox[:, 1] > image.shape[0]):
             return image

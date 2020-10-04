@@ -38,6 +38,8 @@ from craft import CRAFT
 from torch.autograd import Variable
 from multiprocessing import Pool
 
+from data_loader import CLASSES
+
 # 3.2768e-5
 random.seed(42)
 
@@ -108,9 +110,9 @@ if __name__ == '__main__':
     dataloader = Synth80k('/datasets/SynthText/', target_size=768)
     train_loader = torch.utils.data.DataLoader(
         dataloader,
-        batch_size=14,
-        shuffle=True,
-        num_workers=14,
+        batch_size=6,
+        shuffle=False,
+        num_workers=6,
         drop_last=True,
         pin_memory=True)
     #batch_syn = iter(train_loader)
@@ -118,7 +120,7 @@ if __name__ == '__main__':
     # input, target1, target2 = prefetcher.next()
     # print(input.size())
     net = CRAFT()
-    # net.load_state_dict(copyStateDict(torch.load('/data/CRAFT-pytorch/CRAFT_net_050000.pth')))
+    net.load_state_dict(copyStateDict(torch.load('pretrain/synweights.pth')))
     # net.load_state_dict(copyStateDict(torch.load('/data/CRAFT-pytorch/1-7.pth')))
     # net.load_state_dict(copyStateDict(torch.load('/data/CRAFT-pytorch/craft_mlt_25k.pth')))
     # net.load_state_dict(copyStateDict(torch.load('vgg16_bn-6c64b313.pth')))
@@ -157,55 +159,84 @@ if __name__ == '__main__':
     loss_time = 0
     loss_value = 0
     compare_loss = 1
-    for epoch in range(6):
+    total_epochs = 6
+    for epoch in range(total_epochs):
         loss_value = 0
         # if epoch % 50 == 0 and epoch != 0:
         #     step_index += 1
         #     adjust_learning_rate(optimizer, args.gamma, step_index)
 
         st = time.time()
-        for index, (images, gh_label, gah_label, mask, _) in enumerate(train_loader):
+        for i, (images, gh_label, mask, _) in enumerate(train_loader):
             # input()
+            index = epoch * len(train_loader) + i
             if index % 2000 == 0 and index != 0:
                 step_index += 1
                 adjust_learning_rate(optimizer, args.gamma, step_index)
-            #real_images, real_gh_label, real_gah_label, real_mask = next(batch_real)
-
-            # syn_images, syn_gh_label, syn_gah_label, syn_mask = next(batch_syn)
-            # images = torch.cat((syn_images,real_images), 0)
-            # gh_label = torch.cat((syn_gh_label, real_gh_label), 0)
-            # gah_label = torch.cat((syn_gah_label, real_gah_label), 0)
-            # mask = torch.cat((syn_mask, real_mask), 0)
-
-            #affinity_mask = torch.cat((syn_mask, real_affinity_mask), 0)
 
             images = Variable(images.type(torch.FloatTensor)).cuda()
+            
+            # gh_label = gh_label.type(torch.FloatTensor)
+            # gh_label = Variable(gh_label).cuda()
+            
             gh_label = gh_label.type(torch.FloatTensor)
-            gah_label = gah_label.type(torch.FloatTensor)
             gh_label = Variable(gh_label).cuda()
-            gah_label = Variable(gah_label).cuda()
+        
+            # import imgproc
+            # import cv2
+            # import os
+            
+            # gh_permute = gh_label.permute((0,3,1,2))
+            # for index in range(len(gh_permute)):
+            #     for gh, field in zip(gh_permute[index], CLASSES):
+            #         gh_img = gh.cpu().data.numpy()
+            #         gh_img = imgproc.cvt2HeatmapImg(gh_img)
+            #         img_path = os.path.join("prep", "gt_{}_{}.jpg".format(index, field))
+            #         cv2.imwrite(img_path, gh_img)
+            #     img = images[i].permute((1, 2, 0)).cpu().data.numpy()
+            #     new_size = gh_img.shape[:2]
+            #     new_size = new_size[::-1]
+            #     img = cv2.resize(img, new_size)[::,::,::-1] * 255
+            #     print(img.shape)
+            #     print(img)
+            #     img_path = os.path.join("prep", "gt_{}.jpg".format(index))
+            #     cv2.imwrite(img_path, img)
+            #     print('saved images')
+            
             mask = mask.type(torch.FloatTensor)
             mask = Variable(mask).cuda()
-            # affinity_mask = affinity_mask.type(torch.FloatTensor)
-            # affinity_mask = Variable(affinity_mask).cuda()
 
             out, _ = net(images)
-
+            
             optimizer.zero_grad()
 
-            out1 = out[:, :, :, 0].cuda()
-            out2 = out[:, :, :, 1].cuda()
-            loss = criterion(gh_label, gah_label, out1, out2, mask)
+            out = out.cuda()
+
+            # gh_permute = out.permute((0,3,1,2))
+            # for index in range(len(gh_permute)):
+            #     for gh, field in zip(gh_permute[index], CLASSES):
+            #         gh_img = gh.cpu().data.numpy()
+            #         gh_img = imgproc.cvt2HeatmapImg(gh_img)
+            #         img_path = os.path.join("prep", "pred_{}_{}.jpg".format(index, field))
+            #         cv2.imwrite(img_path, gh_img)
+            #     print('saved pred')
+            # input()
+            
+            # print(type(out))
+            # print(type(gh_label))
+            # print(out.cpu().data.numpy().shape)
+            # print(gh_label.cpu().data.numpy().shape)
+            loss = criterion(gh_label, out, mask)
 
             loss.backward()
             optimizer.step()
             loss_value += loss.item()
 
-            PRINT_INTERVAL = 2
+            PRINT_INTERVAL = 1
             if index % PRINT_INTERVAL == 0 and index > 0:
                 et = time.time()
-                print('epoch {}:({}/{}) batch || training time for {} batch: {:.2f} seconds || training loss {:.6f} ||'
-                      .format(epoch, index, len(train_loader), PRINT_INTERVAL, et-st, loss_value/2))
+                print('epoch {}: ({} / {} / {}) batch || training time for {} batch: {:.2f} seconds || training loss {:.6f} ||'
+                      .format(epoch, index, len(train_loader) * total_epochs, len(train_loader), PRINT_INTERVAL, et-st, loss_value/PRINT_INTERVAL))
                 loss_time = 0
                 loss_value = 0
                 st = time.time()

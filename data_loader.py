@@ -8,6 +8,7 @@
 import torch
 import torch.utils.data as data
 import scipy.io as scio
+import json
 from gaussian import GaussianTransformer
 from watershed import watershed
 import re
@@ -21,6 +22,25 @@ import craft_utils
 import Polygon as plg
 import time
 
+
+MAX_CLASSES = 15
+CLASSES = {
+    "cidnum": "SO_CMND",
+    "cname1": "HO_TEN",
+    "cname2": "HO_TEN",
+    "cdob": "NGAY_SINH",
+    "chome1": "QUE_QUAN",
+    "chome2": "QUE_QUAN",
+    "caddress1": "DIA_CHI",
+    "caddress2": "DIA_CHI",
+    "cethnicity": "DAN_TOC",
+    "creligion": "TON_GIAO",
+    "cissue_date": "NGAY_CAP",
+    "cissue_place": "NOI_CAP",
+    "csex": "GIOI_TINH",
+    "cnationality": "QUOC_TICH",
+    "cdoe": "HAN_SU_DUNG",
+}
 
 def ratio_area(h, w, box):
     area = h * w
@@ -336,42 +356,47 @@ class craft_base_dataset(data.Dataset):
             confidences = 1.0
         else:
             confidences = np.array(confidences).mean()
-        region_scores = np.zeros((image.shape[0], image.shape[1]), dtype=np.float32)
-        affinity_scores = np.zeros((image.shape[0], image.shape[1]), dtype=np.float32)
+        # region_scores = np.zeros((image.shape[0], image.shape[1]), dtype=np.float32)
+        # affinity_scores = np.zeros((image.shape[0], image.shape[1]), dtype=np.float32)
+        
+        scores = [np.zeros((image.shape[0], image.shape[1]), dtype=np.float32)
+                  for _ in range(MAX_CLASSES)]
+        
         affinity_bboxes = []
 
+        # if len(character_bboxes) > 0:
+        #     region_scores = self.gaussianTransformer.generate_region(region_scores.shape, character_bboxes)
+        #     affinity_scores, affinity_bboxes = self.gaussianTransformer.generate_affinity(region_scores.shape,
+        #                                                                                   character_bboxes,
+        #                                                                                   words)
+        
         if len(character_bboxes) > 0:
-            region_scores = self.gaussianTransformer.generate_region(region_scores.shape, character_bboxes)
-            affinity_scores, affinity_bboxes = self.gaussianTransformer.generate_affinity(region_scores.shape,
-                                                                                          character_bboxes,
-                                                                                          words)
+            for i, (score, char_bbox) in enumerate(zip(scores, character_bboxes)):
+                if char_bbox[0][0][0][0] != -1:
+                    scores[i] = self.gaussianTransformer.generate_region(score.shape, char_bbox)
+        
         if self.viz:
             self.saveImage(self.get_imagename(index), image.copy(), character_bboxes, affinity_bboxes, region_scores,
                            affinity_scores,
                            confidence_mask)
-        random_transforms = [image, region_scores, affinity_scores, confidence_mask]
-        random_transforms = random_crop(random_transforms, (self.target_size, self.target_size), character_bboxes)
+            
+        cvimage = cv2.resize(image, (self.target_size, self.target_size))
+        # random_transforms = [cvimage, region_scores, affinity_scores, confidence_mask]
+        # random_transforms = random_crop(random_transforms, (self.target_size, self.target_size), character_bboxes)
         # random_transforms = random_horizontal_flip(random_transforms)
-        random_transforms = random_rotate(random_transforms)
+        # random_transforms = random_rotate(random_transforms)
 
-        cvimage, region_scores, affinity_scores, confidence_mask = random_transforms
+        # cvimage, region_scores, affinity_scores, confidence_mask = random_transforms
 
-        region_scores = self.resizeGt(region_scores)
-        affinity_scores = self.resizeGt(affinity_scores)
+        # region_scores = self.resizeGt(region_scores)
+        # affinity_scores = self.resizeGt(affinity_scores)
+        for i, score in enumerate(scores):
+            scores[i] = self.resizeGt(score)
         confidence_mask = self.resizeGt(confidence_mask)
         
-        # import imgproc
-        # region_scores_heatmap = imgproc.cvt2HeatmapImg(region_scores)
-        # affinity_scores_heatmap = imgproc.cvt2HeatmapImg(affinity_scores)
-        # confidence_mask_heatmap = imgproc.cvt2HeatmapImg(confidence_mask)
-        # cv2.imwrite('result/image.jpg', cvimage[:,:,::-1])
-        # cv2.imwrite('result/region_scores_heatmap.jpg', region_scores_heatmap)
-        # cv2.imwrite('result/affinity_scores_heatmap.jpg', affinity_scores_heatmap)
-        # cv2.imwrite('result/confidence_mask_heatmap.jpg', confidence_mask_heatmap)
-        # print('saved test')
-
         if self.viz:
             self.saveInput(self.get_imagename(index), cvimage, region_scores, affinity_scores, confidence_mask)
+            
         image = Image.fromarray(cvimage)
         image = image.convert('RGB')
         image = transforms.ColorJitter(brightness=32.0 / 255, saturation=0.5)(image)
@@ -379,10 +404,16 @@ class craft_base_dataset(data.Dataset):
         image = imgproc.normalizeMeanVariance(np.array(image), mean=(0.485, 0.456, 0.406),
                                               variance=(0.229, 0.224, 0.225))
         image = torch.from_numpy(image).float().permute(2, 0, 1)
-        region_scores_torch = torch.from_numpy(region_scores / 255).float()
-        affinity_scores_torch = torch.from_numpy(affinity_scores / 255).float()
+        
+        # region_scores_torch = torch.from_numpy(region_scores / 255).float()
+        # affinity_scores_torch = torch.from_numpy(affinity_scores / 255).float()
+        
+        scores = np.array(scores)
+        scores_torch = torch.from_numpy(scores / 255).float().permute(1, 2, 0)
+        
         confidence_mask_torch = torch.from_numpy(confidence_mask).float()
-        return image, region_scores_torch, affinity_scores_torch, confidence_mask_torch, confidences
+        # return image, region_scores_torch, affinity_scores_torch, confidence_mask_torch, confidences
+        return image, scores_torch, confidence_mask_torch, confidences
 
 class Synth80k(craft_base_dataset):
 
@@ -391,7 +422,7 @@ class Synth80k(craft_base_dataset):
         self.synthtext_folder = synthtext_folder
         
         self.mat_dir = '/dataset/Khanh_GenData/hard_1M/prep/'
-        self.dir = os.listdir(os.path.join(self.mat_dir, "label"))
+        self.dir = os.listdir(os.path.join(self.mat_dir, "info"))
         self.dir.sort()
         print("Loaded mat dir")
         print(len(self.dir))
@@ -402,6 +433,8 @@ class Synth80k(craft_base_dataset):
         # self.imgtxt = gt['txt'][0]
 
     def __getitem__(self, index):
+        if self.getTemplate(self.dir, index) != 0:
+            return self.__getitem__((index + 123) % len(self.dir))
         return self.pull_item(index)
 
     def __len__(self):
@@ -413,8 +446,52 @@ class Synth80k(craft_base_dataset):
         _, fn = os.path.split(self.dir[index])
         bfn, ext = os.path.splitext(fn)
         return bfn+'.jpg'
+    
+    def getTemplate(self, dir, i):
+        info_path = os.path.join(self.mat_dir, "info", dir[i])
+        with open(info_path, 'r', encoding='utf-8') as f:
+            js = json.load(f)
+        return js['template_id']
         
     def getBB(self, dir, i):
+        
+        info_path = os.path.join(self.mat_dir, "info", dir[i])
+        with open(info_path, 'r', encoding='utf-8') as f:
+            js = json.load(f)
+        data = js['data']
+        
+        def cvt2BB(bbox):
+            return [[bbox[2*i:2*(i+1)] for i in range(4)]]
+        
+        BB = {x:[[[-1,-1] for _ in range(4)]] for x in CLASSES}
+        for field in CLASSES:
+            index = '0'
+            if field.endswith('2'): index = '1'
+            try:
+                BB[field] = cvt2BB(data[CLASSES[field]]['LINE_INFO'][index]['bbox'])
+            except Exception as e:
+                pass
+        
+        if data['NGAY_CAP']['LINE_INFO']['length'] > 0:
+            ISSUE_DATE = ["NGAY_CAP", "THANG_CAP", "NAM_CAP"]
+            xmin = ymin = 10**9
+            xmax = ymax = -1
+            for issue_date in ISSUE_DATE:
+                for field in ['LINE_TEMPLATE', 'LINE_INFO']:
+                    bbox = cvt2BB(data[issue_date][field]['0']['bbox'])
+                    for [x,y] in bbox[0]:
+                        if x < xmin: xmin = x
+                        if x > xmax: xmax = x
+                        if y < ymin: ymin = y
+                        if y > ymax: ymax = y
+            BB['cissue_date'] = [[[xmin, ymin],
+                                [xmax, ymin],
+                                [xmax, ymax],
+                                [xmin, ymax]]]
+        BB = np.array([BB[x] for x in BB])
+        # print(BB)
+        return BB
+        
         mat = scio.loadmat(os.path.join(self.mat_dir, "label", dir[i]))
         return mat['charBB']
 
@@ -443,7 +520,8 @@ class Synth80k(craft_base_dataset):
         image = cv2.imread(img_path, cv2.IMREAD_COLOR)
         image = cv2.cvtColor(image, cv2.COLOR_BGR2RGB)
         
-        _charbox = self.getBB(dir, index).transpose((2, 1, 0))
+        # _charbox = self.getBB(dir, index).transpose((2, 1, 0))
+        _charbox = self.getBB(dir, index)
         # print(self.get_imagename(index))
         # print(_charbox,'\n')
         # print(len(_charbox))
@@ -454,12 +532,13 @@ class Synth80k(craft_base_dataset):
         # print(_charbox,'\n')
         # input()
         
-        image = random_scale(image, _charbox, self.target_size)
+        # image = random_scale(image, _charbox, self.target_size)
         
-        words = self.getTxt(dir, index)
-        # words = list(itertools.chain(*words))
+        # words = self.getTxt(dir, index)
+        words = ['_' for _ in CLASSES]
         words = [t.strip() for t in words]
         words = [t for t in words if len(t) > 0]
+        
         # print(words,'\n')
         # print(len(words))
         # s = 0
@@ -474,17 +553,20 @@ class Synth80k(craft_base_dataset):
         # words = [t for t in words if len(t) > 0]
         # print(len(words))
         # print(words)
-        character_bboxes = []
-        total = 0
+        
+        # character_bboxes = []
+        # total = 0
+        # confidences = []
+        # for i in range(len(words)):
+        #     bboxes = _charbox[total:total + len(words[i])]
+        #     assert (len(bboxes) == len(words[i]))
+        #     total += len(words[i])
+        #     bboxes = np.array(bboxes)
+        #     character_bboxes.append(bboxes)
+        #     confidences.append(1.0)
+            
         confidences = []
-        for i in range(len(words)):
-            bboxes = _charbox[total:total + len(words[i])]
-            assert (len(bboxes) == len(words[i]))
-            total += len(words[i])
-            bboxes = np.array(bboxes)
-            character_bboxes.append(bboxes)
-            confidences.append(1.0)
-
+        character_bboxes = [[bboxes] for bboxes in _charbox]
         return image, character_bboxes, words, np.ones((image.shape[0], image.shape[1]), np.float32), confidences
 
 
