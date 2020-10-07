@@ -16,17 +16,15 @@ def warpCoord(Minv, pt):
 """ end of auxilary functions """
 
 
-def getDetBoxes_core(textmap, linkmap, text_threshold, link_threshold, low_text):
+def getDetBoxes_core(heatmap, text_threshold, low_text):
     # prepare data
-    linkmap = linkmap.copy()
-    textmap = textmap.copy()
-    img_h, img_w = textmap.shape
+    heatmap = heatmap.copy()
+    img_h, img_w = heatmap.shape
 
     """ labeling method """
-    ret, text_score = cv2.threshold(textmap, low_text, 1, 0)
-    ret, link_score = cv2.threshold(linkmap, link_threshold, 1, 0)
+    ret, text_score = cv2.threshold(heatmap, low_text, 1, 0)
 
-    text_score_comb = np.clip(text_score + link_score, 0, 1)
+    text_score_comb = np.clip(text_score, 0, 1)
     nLabels, labels, stats, centroids = cv2.connectedComponentsWithStats(text_score_comb.astype(np.uint8), connectivity=4)
 
     det = []
@@ -37,12 +35,12 @@ def getDetBoxes_core(textmap, linkmap, text_threshold, link_threshold, low_text)
         if size < 10: continue
 
         # thresholding
-        if np.max(textmap[labels==k]) < text_threshold: continue
+        if np.max(heatmap[labels==k]) < text_threshold: continue
 
         # make segmentation map
-        segmap = np.zeros(textmap.shape, dtype=np.uint8)
+        segmap = np.zeros(heatmap.shape, dtype=np.uint8)
         segmap[labels==k] = 255
-        segmap[np.logical_and(link_score==1, text_score==0)] = 0   # remove link area
+        # segmap[np.logical_and(link_score==1, text_score==0)] = 0   # remove link area
         x, y = stats[k, cv2.CC_STAT_LEFT], stats[k, cv2.CC_STAT_TOP]
         w, h = stats[k, cv2.CC_STAT_WIDTH], stats[k, cv2.CC_STAT_HEIGHT]
         niter = int(math.sqrt(size * min(w, h) / (w * h)) * 2)
@@ -227,8 +225,8 @@ def getPoly_core(boxes, labels, mapper, linkmap):
 
     return polys
 
-def getDetBoxes(textmap, linkmap, text_threshold, link_threshold, low_text, poly=False):
-    boxes, labels, mapper = getDetBoxes_core(textmap, linkmap, text_threshold, link_threshold, low_text)
+def getDetBoxes(heatmap, text_threshold, low_text, poly=False):
+    boxes, labels, mapper = getDetBoxes_core(heatmap, text_threshold, low_text)
 
     if poly:
         polys = getPoly_core(boxes, labels, mapper, linkmap)

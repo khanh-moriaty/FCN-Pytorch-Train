@@ -57,7 +57,7 @@ parser.add_argument('--batch_size', default=8, type=int,
                     help='batch size of training')
 # parser.add_argument('--cdua', default=True, type=str2bool,
 # help='Use CUDA to train model')
-parser.add_argument('--lr', '--learning-rate', default=1e-5, type=float,
+parser.add_argument('--lr', '--learning-rate', default=1e-3, type=float,
                     help='initial learning rate')
 parser.add_argument('--momentum', default=0.9, type=float,
                     help='Momentum value for optim')
@@ -90,7 +90,7 @@ def adjust_learning_rate(optimizer, gamma, step):
     # Adapted from PyTorch Imagenet example:
     # https://github.com/pytorch/examples/blob/master/imagenet/main.py
     """
-    lr = args.lr * (0.9 ** step)
+    lr = args.lr * (0.8 ** step)
     print(lr)
     for param_group in optimizer.param_groups:
         param_group['lr'] = lr
@@ -110,9 +110,9 @@ if __name__ == '__main__':
     dataloader = Synth80k('/datasets/SynthText/', target_size=768)
     train_loader = torch.utils.data.DataLoader(
         dataloader,
-        batch_size=6,
+        batch_size=1,
         shuffle=False,
-        num_workers=6,
+        num_workers=0,
         drop_last=True,
         pin_memory=True)
     #batch_syn = iter(train_loader)
@@ -120,7 +120,7 @@ if __name__ == '__main__':
     # input, target1, target2 = prefetcher.next()
     # print(input.size())
     net = CRAFT()
-    net.load_state_dict(copyStateDict(torch.load('pretrain/synweights.pth')))
+    # net.load_state_dict(copyStateDict(torch.load('pretrain/synweights/synweights_front_cmtnd.pth')))
     # net.load_state_dict(copyStateDict(torch.load('/data/CRAFT-pytorch/1-7.pth')))
     # net.load_state_dict(copyStateDict(torch.load('/data/CRAFT-pytorch/craft_mlt_25k.pth')))
     # net.load_state_dict(copyStateDict(torch.load('vgg16_bn-6c64b313.pth')))
@@ -159,7 +159,7 @@ if __name__ == '__main__':
     loss_time = 0
     loss_value = 0
     compare_loss = 1
-    total_epochs = 6
+    total_epochs = 3
     for epoch in range(total_epochs):
         loss_value = 0
         # if epoch % 50 == 0 and epoch != 0:
@@ -168,11 +168,32 @@ if __name__ == '__main__':
 
         st = time.time()
         for i, (images, gh_label, mask, _) in enumerate(train_loader):
-            # input()
+            input()
             index = epoch * len(train_loader) + i
-            if index % 2000 == 0 and index != 0:
+            if index % 500 == 0 and index != 0:
                 step_index += 1
                 adjust_learning_rate(optimizer, args.gamma, step_index)
+        
+            import imgproc
+            import cv2
+            import os
+            
+            gh_permute = gh_label.permute((0,3,1,2))
+            for index in range(len(gh_permute)):
+                for gh, field in zip(gh_permute[index], CLASSES):
+                    gh_img = gh.cpu().data.numpy()
+                    gh_img = imgproc.cvt2HeatmapImg(gh_img)
+                    img_path = os.path.join("prep", "gt_{}_{}.jpg".format(index, field))
+                    cv2.imwrite(img_path, gh_img)
+                img = images[i].permute((1, 2, 0)).cpu().data.numpy()
+                new_size = gh_img.shape[:2]
+                new_size = new_size[::-1]
+                img = cv2.resize(img, new_size)[::,::,::-1] * 255
+                print(img.shape)
+                print(img)
+                img_path = os.path.join("prep", "gt_{}.jpg".format(index))
+                cv2.imwrite(img_path, img)
+                print('saved images')
 
             images = Variable(images.type(torch.FloatTensor)).cuda()
             
@@ -181,27 +202,6 @@ if __name__ == '__main__':
             
             gh_label = gh_label.type(torch.FloatTensor)
             gh_label = Variable(gh_label).cuda()
-        
-            # import imgproc
-            # import cv2
-            # import os
-            
-            # gh_permute = gh_label.permute((0,3,1,2))
-            # for index in range(len(gh_permute)):
-            #     for gh, field in zip(gh_permute[index], CLASSES):
-            #         gh_img = gh.cpu().data.numpy()
-            #         gh_img = imgproc.cvt2HeatmapImg(gh_img)
-            #         img_path = os.path.join("prep", "gt_{}_{}.jpg".format(index, field))
-            #         cv2.imwrite(img_path, gh_img)
-            #     img = images[i].permute((1, 2, 0)).cpu().data.numpy()
-            #     new_size = gh_img.shape[:2]
-            #     new_size = new_size[::-1]
-            #     img = cv2.resize(img, new_size)[::,::,::-1] * 255
-            #     print(img.shape)
-            #     print(img)
-            #     img_path = os.path.join("prep", "gt_{}.jpg".format(index))
-            #     cv2.imwrite(img_path, img)
-            #     print('saved images')
             
             mask = mask.type(torch.FloatTensor)
             mask = Variable(mask).cuda()
@@ -253,3 +253,6 @@ if __name__ == '__main__':
                 # test('pretrain/synweights_' + repr(index) + '.pth')
                 # test('/data/CRAFT-pytorch/craft_mlt_25k.pth')
                 # getresult()
+    print('Saving state, FINAL')
+    torch.save(net.module.state_dict(),
+                'pretrain/synweights.pth')

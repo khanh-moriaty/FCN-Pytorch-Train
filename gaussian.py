@@ -11,6 +11,7 @@ class GaussianTransformer(object):
                  affinity_threshold=0.2):
         distanceRatio = 3.34
         scaledGaussian = lambda x: exp(-(1 / 2) * (x ** 2))
+        # scaledGaussian = lambda x: 1
         self.region_threshold = region_threshold
         self.imgSize = imgSize
         self.standardGaussianHeat = self._gen_gaussian_heatmap(imgSize, distanceRatio)

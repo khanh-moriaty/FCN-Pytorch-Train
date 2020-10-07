@@ -6,6 +6,6 @@ __pycache__
 image/*.*
 demo/*.*
 eval/*.*
-pretrain/*.*
+pretrain/**/*.*
 result/*.*
 prep/*.*

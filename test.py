@@ -45,12 +45,13 @@ def str2bool(v):
     return v.lower() in ("yes", "y", "true", "t", "1")
 
 parser = argparse.ArgumentParser(description='CRAFT Text Detection')
+# parser.add_argument('--trained_model', default='pretrain/synweights/synweights_front_cmtnd.pth', type=str, help='pretrained model')
 parser.add_argument('--trained_model', default='pretrain/synweights.pth', type=str, help='pretrained model')
-parser.add_argument('--text_threshold', default=0.7, type=float, help='text confidence threshold')
+parser.add_argument('--text_threshold', default=0.4, type=float, help='text confidence threshold')
 parser.add_argument('--low_text', default=0.4, type=float, help='text low-bound score')
 parser.add_argument('--link_threshold', default=0.4, type=float, help='link confidence threshold')
 parser.add_argument('--cuda', default=True, type=str2bool, help='Use cuda to train model')
-parser.add_argument('--canvas_size', default=1500, type=int, help='image size for inference')
+parser.add_argument('--canvas_size', default=768, type=int, help='image size for inference')
 parser.add_argument('--mag_ratio', default=2, type=float, help='image magnification ratio')
 parser.add_argument('--poly', default=False, action='store_true', help='enable polygon type')
 parser.add_argument('--show_time', default=True, action='store_true', help='show processing time')
@@ -61,7 +62,7 @@ args = parser.parse_args()
 
 """ For test images in a folder """
 image_list, _, _ = file_utils.get_files('/storage/upload_complete/')
-image_list, _, _ = file_utils.get_files('/storage/prep/')
+# image_list, _, _ = file_utils.get_files('/storage/prep/')
 print(len(image_list))
 
 result_folder = '/storage/result/'
@@ -95,14 +96,20 @@ def test_net(net, image, text_threshold, link_threshold, low_text, cuda, poly):
     t0 = time.time() - t0
     t1 = time.time()
 
+    boxes, polys = None, None
+
     # # Post-processing
-    # boxes, polys = craft_utils.getDetBoxes(score_text, score_link, text_threshold, link_threshold, low_text, poly)
+    # boxes, polys = craft_utils.getDetBoxes(score_text, text_threshold, low_text, poly)
+    postproc = [craft_utils.getDetBoxes(score_text, text_threshold, low_text, poly) for score_text in gh_pred]
+    boxes_pred, polys_pred = zip(*postproc)
 
     # # coordinate adjustment
     # boxes = craft_utils.adjustResultCoordinates(boxes, ratio_w, ratio_h)
     # polys = craft_utils.adjustResultCoordinates(polys, ratio_w, ratio_h)
-    # for k in range(len(polys)):
-    #     if polys[k] is None: polys[k] = boxes[k]
+    
+    for boxes, polys in zip(boxes_pred, polys_pred):
+        for k in range(len(polys)):
+            if polys[k] is None: polys[k] = boxes[k]
 
     t1 = time.time() - t1
 
@@ -113,7 +120,7 @@ def test_net(net, image, text_threshold, link_threshold, low_text, cuda, poly):
 
     if args.show_time : print("\ninfer/postproc time : {:.3f}/{:.3f}".format(t0, t1))
 
-    return gh_pred
+    return gh_pred, boxes_pred, polys_pred, size_heatmap
 
     return boxes, polys, ret_score_text
 
@@ -146,7 +153,7 @@ def test(modelpara):
         res = image.copy()
 
         # bboxes, polys, score_text = test_net(net, image, args.text_threshold, args.link_threshold, args.low_text, args.cuda, args.poly)
-        gh_pred = test_net(net, image, args.text_threshold, args.link_threshold, args.low_text, args.cuda, args.poly)
+        gh_pred, bboxes_pred, polys_pred, size_heatmap = test_net(net, image, args.text_threshold, args.link_threshold, args.low_text, args.cuda, args.poly)
         
         filename, file_ext = os.path.splitext(os.path.basename(image_path))
         result_dir = os.path.join(result_folder, filename)
@@ -156,7 +163,7 @@ def test(modelpara):
             img_path = os.path.join(result_dir, 'res_{}_{}.jpg'.format(filename, field))
             cv2.imwrite(img_path, img)
         h, w = image.shape[:2]
-        img = cv2.resize(image, (w//2, h//2))[::,::,::-1]
+        img = cv2.resize(image, size_heatmap)[::,::,::-1]
         img_path = os.path.join(result_dir, 'res_{}.jpg'.format(filename, field))
         cv2.imwrite(img_path, img)
         
@@ -165,11 +172,24 @@ def test(modelpara):
         # mask_file = result_folder + "/res_" + filename + '_mask.jpg'
         # cv2.imwrite(mask_file, score_text)
         
-        # polys = np.int32([poly.reshape((-1, 1, 2)) for poly in polys])
-        # res = cv2.polylines(res, polys, True, (0, 0, 255), 2)
-        # res_file = result_folder + "/res_" + filename + '.jpg'
-        # cv2.imwrite(res_file, res[:,:,::-1])
-        # # break
+        res = cv2.resize(res, size_heatmap)
+        for polys, field in zip(polys_pred, CLASSES):
+            TEXT_WIDTH = 10*len(field)+10
+            TEXT_HEIGHT = 15
+            polys = np.int32([poly.reshape((-1, 1, 2)) for poly in polys])
+            res = cv2.polylines(res, polys, True, (0, 0, 255), 2)
+            for poly in polys:
+                poly[1,0] = [poly[0,0,0]-10, poly[0,0,1]]
+                poly[2,0] = [poly[0,0,0]-10, poly[0,0,1]+TEXT_HEIGHT]
+                poly[3,0] = [poly[0,0,0]-TEXT_WIDTH, poly[0,0,1]+TEXT_HEIGHT]
+                poly[0,0] = [poly[0,0,0]-TEXT_WIDTH, poly[0,0,1]]
+            res = cv2.fillPoly(res, polys, (224,224,224))
+            # print(poly)
+            for poly in polys:
+                res = cv2.putText(res, field, tuple(poly[3,0]+[+5,-5]), cv2.FONT_HERSHEY_SIMPLEX, 0.4, (0,0,0), thickness=1)
+        res_file = os.path.join(result_dir, 'res_{}_bbox.jpg'.format(filename, field))
+        cv2.imwrite(res_file, res[::,::,::-1])
+        # break
 
         # file_utils.saveResult(image_path, image[:,:,::-1], polys, dirname=result_folder)
 
