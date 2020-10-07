@@ -5,6 +5,5 @@ __pycache__
 image/*.*
 demo/*.*
 eval/*.*
-pretrain/synweights/**/*.pth
 result/*.*
 prep/*.*
