@@ -7,11 +7,9 @@ import imgproc
 
 class GaussianTransformer(object):
 
-    def __init__(self, imgSize=512, region_threshold=0.4,
+    def __init__(self, imgSize=512, region_threshold=0.75,
                  affinity_threshold=0.2):
         distanceRatio = 3.34
-        scaledGaussian = lambda x: exp(-(1 / 2) * (x ** 2))
-        # scaledGaussian = lambda x: 1
         self.region_threshold = region_threshold
         self.imgSize = imgSize
         self.standardGaussianHeat = self._gen_gaussian_heatmap(imgSize, distanceRatio)
@@ -30,7 +28,7 @@ class GaussianTransformer(object):
                                dtype=np.int32)
 
     def _gen_gaussian_heatmap(self, imgSize, distanceRatio):
-        scaledGaussian = lambda x: exp(-(1 / 2) * (x ** 2))
+        scaledGaussian = lambda x: exp(-(1 / 2) * (x ** 3))
         heat = np.zeros((imgSize, imgSize), np.uint8)
         for i in range(imgSize):
             for j in range(imgSize):

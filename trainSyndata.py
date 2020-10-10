@@ -57,7 +57,7 @@ parser.add_argument('--batch_size', default=8, type=int,
                     help='batch size of training')
 # parser.add_argument('--cdua', default=True, type=str2bool,
 # help='Use CUDA to train model')
-parser.add_argument('--lr', '--learning-rate', default=1e-3, type=float,
+parser.add_argument('--lr', '--learning-rate', default=1e-5, type=float,
                     help='initial learning rate')
 parser.add_argument('--momentum', default=0.9, type=float,
                     help='Momentum value for optim')
@@ -90,7 +90,7 @@ def adjust_learning_rate(optimizer, gamma, step):
     # Adapted from PyTorch Imagenet example:
     # https://github.com/pytorch/examples/blob/master/imagenet/main.py
     """
-    lr = args.lr * (0.8 ** step)
+    lr = args.lr * (5 ** min(4, step)) * (0.98 ** max(0, step - 4))
     print(lr)
     for param_group in optimizer.param_groups:
         param_group['lr'] = lr
@@ -110,9 +110,9 @@ if __name__ == '__main__':
     dataloader = Synth80k('/datasets/SynthText/', target_size=768)
     train_loader = torch.utils.data.DataLoader(
         dataloader,
-        batch_size=1,
-        shuffle=False,
-        num_workers=0,
+        batch_size=14,
+        shuffle=True,
+        num_workers=14,
         drop_last=True,
         pin_memory=True)
     #batch_syn = iter(train_loader)
@@ -159,7 +159,7 @@ if __name__ == '__main__':
     loss_time = 0
     loss_value = 0
     compare_loss = 1
-    total_epochs = 3
+    total_epochs = 5
     for epoch in range(total_epochs):
         loss_value = 0
         # if epoch % 50 == 0 and epoch != 0:
@@ -168,32 +168,32 @@ if __name__ == '__main__':
 
         st = time.time()
         for i, (images, gh_label, mask, _) in enumerate(train_loader):
-            input()
+            # input()
             index = epoch * len(train_loader) + i
-            if index % 500 == 0 and index != 0:
+            if index % 100 == 0 and index != 0:
                 step_index += 1
                 adjust_learning_rate(optimizer, args.gamma, step_index)
         
-            import imgproc
-            import cv2
-            import os
+            # import imgproc
+            # import cv2
+            # import os
             
-            gh_permute = gh_label.permute((0,3,1,2))
-            for index in range(len(gh_permute)):
-                for gh, field in zip(gh_permute[index], CLASSES):
-                    gh_img = gh.cpu().data.numpy()
-                    gh_img = imgproc.cvt2HeatmapImg(gh_img)
-                    img_path = os.path.join("prep", "gt_{}_{}.jpg".format(index, field))
-                    cv2.imwrite(img_path, gh_img)
-                img = images[i].permute((1, 2, 0)).cpu().data.numpy()
-                new_size = gh_img.shape[:2]
-                new_size = new_size[::-1]
-                img = cv2.resize(img, new_size)[::,::,::-1] * 255
-                print(img.shape)
-                print(img)
-                img_path = os.path.join("prep", "gt_{}.jpg".format(index))
-                cv2.imwrite(img_path, img)
-                print('saved images')
+            # gh_permute = gh_label.permute((0,3,1,2))
+            # for index in range(len(gh_permute)):
+            #     for gh, field in zip(gh_permute[index], CLASSES):
+            #         gh_img = gh.cpu().data.numpy()
+            #         gh_img = imgproc.cvt2HeatmapImg(gh_img)
+            #         img_path = os.path.join("prep", "gt_{}_{}.jpg".format(index, field))
+            #         cv2.imwrite(img_path, gh_img)
+            #     img = images[i].permute((1, 2, 0)).cpu().data.numpy()
+            #     new_size = gh_img.shape[:2]
+            #     new_size = new_size[::-1]
+            #     img = cv2.resize(img, new_size)[::,::,::-1] * 255
+            #     print(img.shape)
+            #     print(img)
+            #     img_path = os.path.join("prep", "gt_{}.jpg".format(index))
+            #     cv2.imwrite(img_path, img)
+            #     print('saved images')
 
             images = Variable(images.type(torch.FloatTensor)).cuda()
             
@@ -232,7 +232,7 @@ if __name__ == '__main__':
             optimizer.step()
             loss_value += loss.item()
 
-            PRINT_INTERVAL = 1
+            PRINT_INTERVAL = 2
             if index % PRINT_INTERVAL == 0 and index > 0:
                 et = time.time()
                 print('epoch {}: ({} / {} / {}) batch || training time for {} batch: {:.2f} seconds || training loss {:.6f} ||'

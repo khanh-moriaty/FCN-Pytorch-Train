@@ -172,7 +172,7 @@ class craft_base_dataset(data.Dataset):
         self.target_size = target_size
         self.viz = viz
         self.debug = debug
-        self.gaussianTransformer = GaussianTransformer(imgSize=1024, region_threshold=0.55, affinity_threshold=0.15)
+        self.gaussianTransformer = GaussianTransformer(imgSize=1024)
 
     def load_image_gt_and_confidencemask(self, index):
         '''
@@ -422,6 +422,7 @@ class Synth80k(craft_base_dataset):
         self.synthtext_folder = synthtext_folder
         
         self.mat_dir = '/dataset/Khanh_GenData/hard_1M/prep_10k/'
+        self.mat_dir = '/dataset/Khanh_GenData/hard_1M/prep/'
         self.dir = os.listdir(os.path.join(self.mat_dir, "info"))
         self.dir.sort()
         print("Loaded mat dir")
