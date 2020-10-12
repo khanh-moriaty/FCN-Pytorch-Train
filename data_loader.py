@@ -1,8 +1,6 @@
 
 
-
 ###for icdar2015####
-
 
 
 import torch
@@ -21,7 +19,8 @@ import torchvision.transforms as transforms
 import craft_utils
 import Polygon as plg
 import time
-
+from itertools import repeat
+import xml.etree.ElementTree as ET
 
 MAX_CLASSES = 15
 CLASSES = {
@@ -42,6 +41,7 @@ CLASSES = {
     "cdoe": "HAN_SU_DUNG",
 }
 
+
 def ratio_area(h, w, box):
     area = h * w
     ratio = 0
@@ -53,14 +53,16 @@ def ratio_area(h, w, box):
             ratio = tem
     return ratio, area
 
+
 def rescale_img(img, box, h, w):
-    image = np.zeros((768,768,3),dtype = np.uint8)
+    image = np.zeros((768, 768, 3), dtype=np.uint8)
     length = max(h, w)
-    scale = 768 / length           ###768 is the train image size
+    scale = 768 / length  # 768 is the train image size
     img = cv2.resize(img, dsize=None, fx=scale, fy=scale)
     image[:img.shape[0], :img.shape[1]] = img
     box *= scale
     return image
+
 
 def random_scale(img, bboxes, min_size):
     h, w = img.shape[0:2]
@@ -81,12 +83,13 @@ def random_scale(img, bboxes, min_size):
     img = cv2.resize(img, dsize=None, fx=scale, fy=scale)
     return img
 
-def padding_image(image,imgsize):
+
+def padding_image(image, imgsize):
     length = max(image.shape[0:2])
     if len(image.shape) == 3:
-        img = np.zeros((imgsize, imgsize, len(image.shape)), dtype = np.uint8)
+        img = np.zeros((imgsize, imgsize, len(image.shape)), dtype=np.uint8)
     else:
-        img = np.zeros((imgsize, imgsize), dtype = np.uint8)
+        img = np.zeros((imgsize, imgsize), dtype=np.uint8)
     scale = imgsize / length
     image = cv2.resize(image, dsize=None, fx=scale, fy=scale)
     if len(image.shape) == 3:
@@ -94,6 +97,7 @@ def padding_image(image,imgsize):
     else:
         img[:image.shape[0], :image.shape[1]] = image
     return img
+
 
 def random_crop(imgs, img_size, character_bboxes):
     h, w = imgs[0].shape[0:2]
@@ -172,7 +176,7 @@ class craft_base_dataset(data.Dataset):
         self.target_size = target_size
         self.viz = viz
         self.debug = debug
-        self.gaussianTransformer = GaussianTransformer(imgSize=1024)
+        self.gaussianTransformer = GaussianTransformer(imgSize=512)
 
     def load_image_gt_and_confidencemask(self, index):
         '''
@@ -221,7 +225,8 @@ class craft_base_dataset(data.Dataset):
         scores, _ = net(img_torch)
         region_scores = scores[0, :, :, 0].cpu().data.numpy()
         region_scores = np.uint8(np.clip(region_scores, 0, 1) * 255)
-        bgr_region_scores = cv2.resize(region_scores, (input.shape[1], input.shape[0]))
+        bgr_region_scores = cv2.resize(
+            region_scores, (input.shape[1], input.shape[0]))
         bgr_region_scores = cv2.cvtColor(bgr_region_scores, cv2.COLOR_GRAY2BGR)
         pursedo_bboxes = watershed(input, bgr_region_scores, False)
 
@@ -260,15 +265,22 @@ class craft_base_dataset(data.Dataset):
             bboxes = pursedo_bboxes
         if False:
             _tmp_bboxes = np.int32(bboxes.copy())
-            _tmp_bboxes[:, :, 0] = np.clip(_tmp_bboxes[:, :, 0], 0, input.shape[1])
-            _tmp_bboxes[:, :, 1] = np.clip(_tmp_bboxes[:, :, 1], 0, input.shape[0])
+            _tmp_bboxes[:, :, 0] = np.clip(
+                _tmp_bboxes[:, :, 0], 0, input.shape[1])
+            _tmp_bboxes[:, :, 1] = np.clip(
+                _tmp_bboxes[:, :, 1], 0, input.shape[0])
             for bbox in _tmp_bboxes:
-                cv2.polylines(np.uint8(input), [np.reshape(bbox, (-1, 1, 2))], True, (255, 0, 0))
-            region_scores_color = cv2.applyColorMap(np.uint8(region_scores), cv2.COLORMAP_JET)
-            region_scores_color = cv2.resize(region_scores_color, (input.shape[1], input.shape[0]))
-            target = self.gaussianTransformer.generate_region(region_scores_color.shape, [_tmp_bboxes])
+                cv2.polylines(np.uint8(input), [np.reshape(
+                    bbox, (-1, 1, 2))], True, (255, 0, 0))
+            region_scores_color = cv2.applyColorMap(
+                np.uint8(region_scores), cv2.COLORMAP_JET)
+            region_scores_color = cv2.resize(
+                region_scores_color, (input.shape[1], input.shape[0]))
+            target = self.gaussianTransformer.generate_region(
+                region_scores_color.shape, [_tmp_bboxes])
             target_color = cv2.applyColorMap(target, cv2.COLORMAP_JET)
-            viz_image = np.hstack([input[:, :, ::-1], region_scores_color, target_color])
+            viz_image = np.hstack(
+                [input[:, :, ::-1], region_scores_color, target_color])
             cv2.imshow("crop_image", viz_image)
             cv2.waitKey()
         bboxes /= scale
@@ -302,22 +314,29 @@ class craft_base_dataset(data.Dataset):
 
     def saveInput(self, imagename, image, region_scores, affinity_scores, confidence_mask):
 
-        boxes, polys = craft_utils.getDetBoxes(region_scores / 255, affinity_scores / 255, 0.7, 0.4, 0.4, False)
+        boxes, polys = craft_utils.getDetBoxes(
+            region_scores / 255, affinity_scores / 255, 0.7, 0.4, 0.4, False)
         boxes = np.array(boxes, np.int32) * 2
         if len(boxes) > 0:
             np.clip(boxes[:, :, 0], 0, image.shape[1])
             np.clip(boxes[:, :, 1], 0, image.shape[0])
             for box in boxes:
-                cv2.polylines(image, [np.reshape(box, (-1, 1, 2))], True, (0, 0, 255))
-        target_gaussian_heatmap_color = imgproc.cvt2HeatmapImg(region_scores / 255)
-        target_gaussian_affinity_heatmap_color = imgproc.cvt2HeatmapImg(affinity_scores / 255)
+                cv2.polylines(
+                    image, [np.reshape(box, (-1, 1, 2))], True, (0, 0, 255))
+        target_gaussian_heatmap_color = imgproc.cvt2HeatmapImg(
+            region_scores / 255)
+        target_gaussian_affinity_heatmap_color = imgproc.cvt2HeatmapImg(
+            affinity_scores / 255)
         confidence_mask_gray = imgproc.cvt2HeatmapImg(confidence_mask)
-        gt_scores = np.hstack([target_gaussian_heatmap_color, target_gaussian_affinity_heatmap_color])
-        confidence_mask_gray = np.hstack([np.zeros_like(confidence_mask_gray), confidence_mask_gray])
+        gt_scores = np.hstack(
+            [target_gaussian_heatmap_color, target_gaussian_affinity_heatmap_color])
+        confidence_mask_gray = np.hstack(
+            [np.zeros_like(confidence_mask_gray), confidence_mask_gray])
         output = np.concatenate([gt_scores, confidence_mask_gray],
                                 axis=0)
         output = np.hstack([image, output])
-        outpath = os.path.join(os.path.join(os.path.dirname(__file__) + '/output'), "%s_input.jpg" % imagename)
+        outpath = os.path.join(os.path.join(os.path.dirname(
+            __file__) + '/output'), "%s_input.jpg" % imagename)
         print(outpath)
         if not os.path.exists(os.path.dirname(outpath)):
             os.mkdir(os.path.dirname(outpath))
@@ -329,18 +348,25 @@ class craft_base_dataset(data.Dataset):
         if len(bboxes) > 0:
             affinity_bboxes = np.int32(affinity_bboxes)
             for i in range(affinity_bboxes.shape[0]):
-                cv2.polylines(output_image, [np.reshape(affinity_bboxes[i], (-1, 1, 2))], True, (255, 0, 0))
+                cv2.polylines(output_image, [np.reshape(
+                    affinity_bboxes[i], (-1, 1, 2))], True, (255, 0, 0))
             for i in range(len(bboxes)):
                 _bboxes = np.int32(bboxes[i])
                 for j in range(_bboxes.shape[0]):
-                    cv2.polylines(output_image, [np.reshape(_bboxes[j], (-1, 1, 2))], True, (0, 0, 255))
+                    cv2.polylines(output_image, [np.reshape(
+                        _bboxes[j], (-1, 1, 2))], True, (0, 0, 255))
 
-        target_gaussian_heatmap_color = imgproc.cvt2HeatmapImg(region_scores / 255)
-        target_gaussian_affinity_heatmap_color = imgproc.cvt2HeatmapImg(affinity_scores / 255)
-        heat_map = np.concatenate([target_gaussian_heatmap_color, target_gaussian_affinity_heatmap_color], axis=1)
+        target_gaussian_heatmap_color = imgproc.cvt2HeatmapImg(
+            region_scores / 255)
+        target_gaussian_affinity_heatmap_color = imgproc.cvt2HeatmapImg(
+            affinity_scores / 255)
+        heat_map = np.concatenate(
+            [target_gaussian_heatmap_color, target_gaussian_affinity_heatmap_color], axis=1)
         confidence_mask_gray = imgproc.cvt2HeatmapImg(confidence_mask)
-        output = np.concatenate([output_image, heat_map, confidence_mask_gray], axis=1)
-        outpath = os.path.join(os.path.join(os.path.dirname(__file__) + '/result'), imagename)
+        output = np.concatenate(
+            [output_image, heat_map, confidence_mask_gray], axis=1)
+        outpath = os.path.join(os.path.join(
+            os.path.dirname(__file__) + '/result'), imagename)
 
         if not os.path.exists(os.path.dirname(outpath)):
             os.mkdir(os.path.dirname(outpath))
@@ -351,17 +377,18 @@ class craft_base_dataset(data.Dataset):
         #     pass
         # else:
         #     return [], [], [], [], np.array([0])
-        image, character_bboxes, words, confidence_mask, confidences = self.load_image_gt_and_confidencemask(index)
+        image, character_bboxes, words, confidence_mask, confidences = self.load_image_gt_and_confidencemask(
+            index)
         if len(confidences) == 0:
             confidences = 1.0
         else:
             confidences = np.array(confidences).mean()
         # region_scores = np.zeros((image.shape[0], image.shape[1]), dtype=np.float32)
         # affinity_scores = np.zeros((image.shape[0], image.shape[1]), dtype=np.float32)
-        
+
         scores = [np.zeros((image.shape[0], image.shape[1]), dtype=np.float32)
                   for _ in range(MAX_CLASSES)]
-        
+
         affinity_bboxes = []
 
         # if len(character_bboxes) > 0:
@@ -369,17 +396,18 @@ class craft_base_dataset(data.Dataset):
         #     affinity_scores, affinity_bboxes = self.gaussianTransformer.generate_affinity(region_scores.shape,
         #                                                                                   character_bboxes,
         #                                                                                   words)
-        
+
         if len(character_bboxes) > 0:
             for i, (score, char_bbox) in enumerate(zip(scores, character_bboxes)):
                 if char_bbox[0][0][0][0] != -1:
-                    scores[i] = self.gaussianTransformer.generate_region(score.shape, char_bbox)
-        
+                    scores[i] = self.gaussianTransformer.generate_region(
+                        score.shape, char_bbox)
+
         if self.viz:
             self.saveImage(self.get_imagename(index), image.copy(), character_bboxes, affinity_bboxes, region_scores,
                            affinity_scores,
                            confidence_mask)
-            
+
         cvimage = cv2.resize(image, (self.target_size, self.target_size))
         # random_transforms = [cvimage, region_scores, affinity_scores, confidence_mask]
         # random_transforms = random_crop(random_transforms, (self.target_size, self.target_size), character_bboxes)
@@ -393,41 +421,45 @@ class craft_base_dataset(data.Dataset):
         for i, score in enumerate(scores):
             scores[i] = self.resizeGt(score)
         confidence_mask = self.resizeGt(confidence_mask)
-        
+
         if self.viz:
-            self.saveInput(self.get_imagename(index), cvimage, region_scores, affinity_scores, confidence_mask)
-            
+            self.saveInput(self.get_imagename(index), cvimage,
+                           region_scores, affinity_scores, confidence_mask)
+
         image = Image.fromarray(cvimage)
         image = image.convert('RGB')
-        image = transforms.ColorJitter(brightness=32.0 / 255, saturation=0.5)(image)
+        image = transforms.ColorJitter(
+            brightness=32.0 / 255, saturation=0.5)(image)
 
         image = imgproc.normalizeMeanVariance(np.array(image), mean=(0.485, 0.456, 0.406),
                                               variance=(0.229, 0.224, 0.225))
         image = torch.from_numpy(image).float().permute(2, 0, 1)
-        
+
         # region_scores_torch = torch.from_numpy(region_scores / 255).float()
         # affinity_scores_torch = torch.from_numpy(affinity_scores / 255).float()
-        
+
         scores = np.array(scores)
         scores_torch = torch.from_numpy(scores / 255).float().permute(1, 2, 0)
-        
+
         confidence_mask_torch = torch.from_numpy(confidence_mask).float()
         # return image, region_scores_torch, affinity_scores_torch, confidence_mask_torch, confidences
         return image, scores_torch, confidence_mask_torch, confidences
+
 
 class Synth80k(craft_base_dataset):
 
     def __init__(self, synthtext_folder, target_size=768, viz=False, debug=False):
         super(Synth80k, self).__init__(target_size, viz, debug)
         self.synthtext_folder = synthtext_folder
-        
+
         self.mat_dir = '/dataset/Khanh_GenData/hard_1M/prep_10k/'
-        self.mat_dir = '/dataset/Khanh_GenData/hard_1M/prep/'
+        self.mat_dir = '/dataset/Khanh_GenData/hard_100k/'
+        # self.mat_dir = '/dataset/Khanh_GenData/hard_1M/prep/'
         self.dir = os.listdir(os.path.join(self.mat_dir, "info"))
         self.dir.sort()
         print("Loaded mat dir")
         print(len(self.dir))
-        
+
         # gt = scio.loadmat(os.path.join(synthtext_folder, 'gt.mat'))
         # self.charbox = gt['charBB'][0]
         # self.image = gt['imnames'][0]
@@ -447,59 +479,97 @@ class Synth80k(craft_base_dataset):
         _, fn = os.path.split(self.dir[index])
         bfn, ext = os.path.splitext(fn)
         return bfn+'.jpg'
-    
+
     def getTemplate(self, dir, i):
         info_path = os.path.join(self.mat_dir, "info", dir[i])
         with open(info_path, 'r', encoding='utf-8') as f:
             js = json.load(f)
         return js['template_id']
-        
-    def getBB(self, dir, i):
-        
-        info_path = os.path.join(self.mat_dir, "info", dir[i])
-        with open(info_path, 'r', encoding='utf-8') as f:
-            js = json.load(f)
+
+    def _cvt2BB(bbox):
+        return [[bbox[2*i:2*(i+1)] for i in range(4)]]
+
+    def _getBB(self, js, image):
+
         data = js['data']
-        
-        def cvt2BB(bbox):
-            return [[bbox[2*i:2*(i+1)] for i in range(4)]]
-        
-        BB = {x:[[[-1,-1] for _ in range(4)]] for x in CLASSES}
+        BB = {x: [[[-1, -1] for _ in range(4)]] for x in CLASSES}
         for field in CLASSES:
             index = '0'
-            if field.endswith('2'): index = '1'
+            if field.endswith('2'):
+                index = '1'
             try:
-                BB[field] = cvt2BB(data[CLASSES[field]]['LINE_INFO'][index]['bbox'])
+                BB[field] = _cvt2BB(data[CLASSES[field]]
+                                    ['LINE_INFO'][index]['bbox'])
             except Exception as e:
                 pass
-        
+
         if data['NGAY_CAP']['LINE_INFO']['length'] > 0:
             ISSUE_DATE = ["NGAY_CAP", "THANG_CAP", "NAM_CAP"]
             xmin = ymin = 10**9
             xmax = ymax = -1
             for issue_date in ISSUE_DATE:
                 for field in ['LINE_TEMPLATE', 'LINE_INFO']:
-                    bbox = cvt2BB(data[issue_date][field]['0']['bbox'])
-                    for [x,y] in bbox[0]:
-                        if x < xmin: xmin = x
-                        if x > xmax: xmax = x
-                        if y < ymin: ymin = y
-                        if y > ymax: ymax = y
+                    bbox = _cvt2BB(data[issue_date][field]['0']['bbox'])
+                    for [x, y] in bbox[0]:
+                        if x < xmin:
+                            xmin = x
+                        if x > xmax:
+                            xmax = x
+                        if y < ymin:
+                            ymin = y
+                        if y > ymax:
+                            ymax = y
             BB['cissue_date'] = [[[xmin, ymin],
-                                [xmax, ymin],
-                                [xmax, ymax],
-                                [xmin, ymax]]]
-        BB = np.array([BB[x] for x in BB])
-        # print(BB)
-        return BB
-        
+                                  [xmax, ymin],
+                                  [xmax, ymax],
+                                  [xmin, ymax]]]
+
+        BB = np.array([BB[x] for x in BB]).astype(np.float32)
+
+        def perspective(BB, image, old_bbox, new_bbox):
+            M = cv2.getPerspectiveTransform(old_bbox, new_bbox)
+            image = cv2.warpPerspective(src=image, M=M, dsize=(width, height))
+            BB = BB.reshape((-1, 1, 2))
+            BB = cv2.perspectiveTransform(src=BB, m=M).reshape((-1, 1, 4, 2))
+            return BB, image
+
+        old_bbox = js['bbox']
+        old_bbox = np.array([[x, y] for x, y in zip(
+            old_bbox[::2], old_bbox[1::2])], dtype=np.float32)
+        height, width = image.shape[:2]
+        new_bbox = np.array([[0, 0], [width, 0], [0, height], [
+                            width, height]], dtype=np.float32)
+        BB, image = perspective(BB, image, old_bbox, new_bbox)
+
+        height, width = image.shape[:2]
+        old_bbox = np.array([[width/20, height/10],
+                             [width*19/20, height/10],
+                             [width/20, height*9/10],
+                             [width*19/20, height*9/10]], np.float32)
+        rand_mask = np.random.randint(-25, 26,
+                                      size=(4, 2)).astype(np.float32) / 100
+        old_bbox += np.array([[width/20, height/10]]) * rand_mask
+        new_bbox = np.array([[0, 0], [width, 0], [0, height], [
+                            width, height]], dtype=np.float32)
+        BB, image = perspective(BB, image, old_bbox, new_bbox)
+
+        return BB, image
+
+    def getBB(self, dir, i, image):
+
+        info_path = os.path.join(self.mat_dir, "info", dir[i])
+        with open(info_path, 'r', encoding='utf-8') as f:
+            js = json.load(f)
+
+        return self._getBB(js, image)
+
         mat = scio.loadmat(os.path.join(self.mat_dir, "label", dir[i]))
         return mat['charBB']
 
     def getTxt(self, dir, i):
         mat = scio.loadmat(os.path.join(self.mat_dir, "label", dir[i]))
         return mat['txt'].tolist()
-    
+
     def getImg(self, dir, i):
         _, fn = os.path.split(dir[i])
         bfn, ext = os.path.splitext(fn)
@@ -516,30 +586,30 @@ class Synth80k(craft_base_dataset):
         # input()
         dir = self.dir
         # img_path = os.path.join(self.synthtext_folder, self.image[index][0])
-        
+
         img_path = self.getImg(dir, index)
         image = cv2.imread(img_path, cv2.IMREAD_COLOR)
         image = cv2.cvtColor(image, cv2.COLOR_BGR2RGB)
-        
+
         # _charbox = self.getBB(dir, index).transpose((2, 1, 0))
-        _charbox = self.getBB(dir, index)
+        _charbox, image = self.getBB(dir, index, image)
         # print(self.get_imagename(index))
         # print(_charbox,'\n')
         # print(len(_charbox))
         # input()
-        
+
         # _charbox = self.charbox[index].transpose((2, 1, 0))
         # print(len(_charbox))
         # print(_charbox,'\n')
         # input()
-        
+
         # image = random_scale(image, _charbox, self.target_size)
-        
+
         # words = self.getTxt(dir, index)
         words = ['_' for _ in CLASSES]
         words = [t.strip() for t in words]
         words = [t for t in words if len(t) > 0]
-        
+
         # print(words,'\n')
         # print(len(words))
         # s = 0
@@ -547,14 +617,13 @@ class Synth80k(craft_base_dataset):
         #     s += len(word)
         # print(s)
         # input()
-        
-        
+
         # words = [re.split(' \n|\n |\n| ', t.strip()) for t in self.imgtxt[index]]
         # words = list(itertools.chain(*words))
         # words = [t for t in words if len(t) > 0]
         # print(len(words))
         # print(words)
-        
+
         # character_bboxes = []
         # total = 0
         # confidences = []
@@ -565,7 +634,124 @@ class Synth80k(craft_base_dataset):
         #     bboxes = np.array(bboxes)
         #     character_bboxes.append(bboxes)
         #     confidences.append(1.0)
-            
+
+        confidences = []
+        character_bboxes = [[bboxes] for bboxes in _charbox]
+        return image, character_bboxes, words, np.ones((image.shape[0], image.shape[1]), np.float32), confidences
+
+
+class CrawlData(craft_base_dataset):
+
+    def __init__(self, synthtext_folder, target_size=768, viz=False, debug=False, proportion=7/3):
+        super(CrawlData, self).__init__(target_size, viz, debug)
+        self.synthtext_folder = synthtext_folder
+
+        self.mat_dir = '/dataset/crawl/front_cmtnd_resized/'
+        self.dir = os.listdir(os.path.join(self.mat_dir, "label"))
+        self.dir.sort()
+
+        print("Loaded mat dir")
+        print(len(self.dir))
+
+    def __getitem__(self, index):
+        return self.pull_item(index)
+
+    def __len__(self):
+        return len(self.dir)
+
+    def get_imagename(self, index):
+        _, fn = os.path.split(self.dir[index])
+        bfn, ext = os.path.splitext(fn)
+        return bfn+'.jpg'
+
+    def getBB(self, dir, i, image):
+
+        info_path = os.path.join(self.mat_dir, "label", dir[i])
+        tree = ET.parse(info_path)
+        root = tree.getroot()
+        BB = {x: [[[-1, -1] for _ in range(4)]] for x in CLASSES}
+        for obj in root.iter('object'):
+            name = obj.findtext('name')
+            if name not in CLASSES: continue
+            bndbox = obj.find('bndbox')
+            xmin = int(bndbox.findtext('xmin'))
+            xmax = int(bndbox.findtext('xmax'))
+            ymin = int(bndbox.findtext('ymin'))
+            ymax = int(bndbox.findtext('ymax'))
+            BB[name] = [[[xmin, ymin],
+                         [xmax, ymin],
+                         [xmax, ymax],
+                         [xmin, ymax]]]
+        BB = np.array([BB[x] for x in BB]).astype(np.float32)
+        # print(BB.shape)
+        return BB, image
+        
+        
+    def getImg(self, dir, i):
+        _, fn = os.path.split(dir[i])
+        bfn, ext = os.path.splitext(fn)
+        im = os.path.join(self.mat_dir, "image", self.get_imagename(i))
+        return im
+
+    def load_image_gt_and_confidencemask(self, index):
+        '''
+        根据索引加载ground truth
+        :param index:索引
+        :return:bboxes 字符的框，
+        '''
+        # print('index =',index)
+        # input()
+        dir = self.dir
+        # img_path = os.path.join(self.synthtext_folder, self.image[index][0])
+
+        img_path = self.getImg(dir, index)
+        image = cv2.imread(img_path, cv2.IMREAD_COLOR)
+        image = cv2.cvtColor(image, cv2.COLOR_BGR2RGB)
+
+        # _charbox = self.getBB(dir, index).transpose((2, 1, 0))
+        _charbox, image = self.getBB(dir, index, image)
+        # print(self.get_imagename(index))
+        # print(_charbox,'\n')
+        # print(len(_charbox))
+        # input()
+
+        # _charbox = self.charbox[index].transpose((2, 1, 0))
+        # print(len(_charbox))
+        # print(_charbox,'\n')
+        # input()
+
+        # image = random_scale(image, _charbox, self.target_size)
+
+        # words = self.getTxt(dir, index)
+        words = ['_' for _ in CLASSES]
+        words = [t.strip() for t in words]
+        words = [t for t in words if len(t) > 0]
+
+        # print(words,'\n')
+        # print(len(words))
+        # s = 0
+        # for word in words:
+        #     s += len(word)
+        # print(s)
+        # input()
+
+        # words = [re.split(' \n|\n |\n| ', t.strip()) for t in self.imgtxt[index]]
+        # words = list(itertools.chain(*words))
+        # words = [t for t in words if len(t) > 0]
+        # print(len(words))
+        # print(words)
+
+        # character_bboxes = []
+        # total = 0
+        # confidences = []
+        # for i in range(len(words)):
+        #     bboxes = _charbox[total:total + len(words[i])]
+        #     assert (len(bboxes) == len(words[i]))
+        #     total += len(words[i])
+        #     bboxes = np.array(bboxes)
+        #     character_bboxes.append(bboxes)
+        #     confidences.append(1.0)
+
         confidences = []
         character_bboxes = [[bboxes] for bboxes in _charbox]
         return image, character_bboxes, words, np.ones((image.shape[0], image.shape[1]), np.float32), confidences
@@ -576,7 +762,8 @@ class ICDAR2013(craft_base_dataset):
         super(ICDAR2013, self).__init__(target_size, viz, debug)
         self.net = net
         self.net.eval()
-        self.img_folder = os.path.join(icdar2013_folder, 'images/ch8_training_images')
+        self.img_folder = os.path.join(
+            icdar2013_folder, 'images/ch8_training_images')
         self.gt_folder = os.path.join(icdar2013_folder, 'gt')
         imagenames = os.listdir(self.img_folder)
         self.images_path = []
@@ -606,7 +793,8 @@ class ICDAR2013(craft_base_dataset):
         :return:bboxes 字符的框，
         '''
         imagename = self.images_path[index]
-        gt_path = os.path.join(self.gt_folder, "gt_%s.txt" % os.path.splitext(imagename)[0])
+        gt_path = os.path.join(self.gt_folder, "gt_%s.txt" %
+                               os.path.splitext(imagename)[0])
         word_bboxes, words = self.load_gt(gt_path)
         word_bboxes = np.float32(word_bboxes)
 
@@ -624,7 +812,8 @@ class ICDAR2013(craft_base_dataset):
         if len(word_bboxes) > 0:
             for i in range(len(word_bboxes)):
                 if words[i] == '###' or len(words[i].strip()) == 0:
-                    cv2.fillPoly(confidence_mask, [np.int32(word_bboxes[i])], (0))
+                    cv2.fillPoly(confidence_mask, [
+                                 np.int32(word_bboxes[i])], (0))
             for i in range(len(word_bboxes)):
                 if words[i] == '###' or len(words[i].strip()) == 0:
                     continue
@@ -634,7 +823,8 @@ class ICDAR2013(craft_base_dataset):
                                                                                                gt_path,
                                                                                                viz=self.viz)
                 confidences.append(confidence)
-                cv2.fillPoly(confidence_mask, [np.int32(word_bboxes[i])], (confidence))
+                cv2.fillPoly(confidence_mask, [
+                             np.int32(word_bboxes[i])], (confidence))
                 new_words.append(words[i])
                 character_bboxes.append(pursedo_bboxes)
         return image, character_bboxes, new_words, confidence_mask, confidences
@@ -659,7 +849,7 @@ class ICDAR2013(craft_base_dataset):
             try:
                 area, p0, p3, p2, p1, _, _ = mep(box)
             except Exception as e:
-                print(e,gt_path)
+                print(e, gt_path)
 
             bbox = np.array([p0, p1, p2, p3])
             distance = 10000000
@@ -684,7 +874,8 @@ class ICDAR2015(craft_base_dataset):
         self.net = net
         self.net.eval()
         self.img_folder = os.path.join(icdar2015_folder, 'ch4_training_images')
-        self.gt_folder = os.path.join(icdar2015_folder, 'ch4_training_localization_transcription_gt')
+        self.gt_folder = os.path.join(
+            icdar2015_folder, 'ch4_training_localization_transcription_gt')
         imagenames = os.listdir(self.img_folder)
         self.images_path = []
         for imagename in imagenames:
@@ -706,7 +897,8 @@ class ICDAR2015(craft_base_dataset):
         :return:bboxes 字符的框，
         '''
         imagename = self.images_path[index]
-        gt_path = os.path.join(self.gt_folder, "gt_%s.txt" % os.path.splitext(imagename)[0])
+        gt_path = os.path.join(self.gt_folder, "gt_%s.txt" %
+                               os.path.splitext(imagename)[0])
         word_bboxes, words = self.load_gt(gt_path)
         word_bboxes = np.float32(word_bboxes)
 
@@ -724,7 +916,8 @@ class ICDAR2015(craft_base_dataset):
         if len(word_bboxes) > 0:
             for i in range(len(word_bboxes)):
                 if words[i] == '###' or len(words[i].strip()) == 0:
-                    cv2.fillPoly(confidence_mask, [np.int32(word_bboxes[i])], (0))
+                    cv2.fillPoly(confidence_mask, [
+                                 np.int32(word_bboxes[i])], (0))
             for i in range(len(word_bboxes)):
                 if words[i] == '###' or len(words[i].strip()) == 0:
                     continue
@@ -733,7 +926,8 @@ class ICDAR2015(craft_base_dataset):
                                                                                                words[i],
                                                                                                viz=self.viz)
                 confidences.append(confidence)
-                cv2.fillPoly(confidence_mask, [np.int32(word_bboxes[i])], (confidence))
+                cv2.fillPoly(confidence_mask, [
+                             np.int32(word_bboxes[i])], (confidence))
                 new_words.append(words[i])
                 character_bboxes.append(pursedo_bboxes)
         return image, character_bboxes, new_words, confidence_mask, confidences
@@ -791,7 +985,8 @@ if __name__ == '__main__':
     net = net.cuda()
     net = torch.nn.DataParallel(net)
     net.eval()
-    dataloader = ICDAR2015(net, '/data/CRAFT-pytorch/icdar2015', target_size=768, viz=True)
+    dataloader = ICDAR2015(
+        net, '/data/CRAFT-pytorch/icdar2015', target_size=768, viz=True)
     train_loader = torch.utils.data.DataLoader(
         dataloader,
         batch_size=1,
@@ -807,5 +1002,3 @@ if __name__ == '__main__':
         # total_sum += confidence_mean
         # print(index, confidence_mean)
     print("mean=", total_sum / total)
-
-

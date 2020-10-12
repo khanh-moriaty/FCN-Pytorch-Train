@@ -19,7 +19,7 @@ from test import test
 
 
 from math import exp
-from data_loader import ICDAR2015, Synth80k, ICDAR2013
+from data_loader import ICDAR2015, Synth80k, ICDAR2013, CrawlData
 
 ###import file#######
 # from augmentation import random_rot, crop_img_bboxes
@@ -53,7 +53,7 @@ parser = argparse.ArgumentParser(description='CRAFT reimplementation')
 
 parser.add_argument('--resume', default=None, type=str,
                     help='Checkpoint state_dict file to resume training from')
-parser.add_argument('--batch_size', default=8, type=int,
+parser.add_argument('--batch_size', default=14, type=int,
                     help='batch size of training')
 # parser.add_argument('--cdua', default=True, type=str2bool,
 # help='Use CUDA to train model')
@@ -90,7 +90,7 @@ def adjust_learning_rate(optimizer, gamma, step):
     # Adapted from PyTorch Imagenet example:
     # https://github.com/pytorch/examples/blob/master/imagenet/main.py
     """
-    lr = args.lr * (5 ** min(4, step)) * (0.98 ** max(0, step - 4))
+    lr = args.lr * (5 ** min(4, step)) * (0.99 ** max(0, step - 4))
     print(lr)
     for param_group in optimizer.param_groups:
         param_group['lr'] = lr
@@ -106,21 +106,40 @@ if __name__ == '__main__':
     # imgtxt = box['txt'][0]
 
     #dataloader = syndata(imgname, charbox, imgtxt)
-    # print("Hello?")
-    dataloader = Synth80k('/datasets/SynthText/', target_size=768)
+    
+    # dataloader = Synth80k('/datasets/SynthText/', target_size=768)
+    # train_loader = torch.utils.data.DataLoader(
+    #     dataloader,
+    #     batch_size=args.batch_size,
+    #     shuffle=True,
+    #     num_workers=args.batch_size,
+    #     drop_last=True,
+    #     pin_memory=True)
+    
+    # dataloader = Synth80k('/datasets/SynthText/', target_size=768)
+    # train_loader = torch.utils.data.DataLoader(
+    #     dataloader,
+    #     batch_size=1,
+    #     shuffle=False,
+    #     num_workers=0,
+    #     drop_last=True,
+    #     pin_memory=True)
+    
+    dataloader = CrawlData('/datasets/SynthText/', target_size=768)
     train_loader = torch.utils.data.DataLoader(
         dataloader,
-        batch_size=14,
+        batch_size=args.batch_size,
         shuffle=True,
-        num_workers=14,
+        num_workers=args.batch_size,
         drop_last=True,
         pin_memory=True)
+    
     #batch_syn = iter(train_loader)
     # prefetcher = data_prefetcher(dataloader)
     # input, target1, target2 = prefetcher.next()
     # print(input.size())
     net = CRAFT()
-    # net.load_state_dict(copyStateDict(torch.load('pretrain/synweights/synweights_front_cmtnd.pth')))
+    net.load_state_dict(copyStateDict(torch.load('pretrain/synweights/synweights_front_cmtnd.pth')))
     # net.load_state_dict(copyStateDict(torch.load('/data/CRAFT-pytorch/1-7.pth')))
     # net.load_state_dict(copyStateDict(torch.load('/data/CRAFT-pytorch/craft_mlt_25k.pth')))
     # net.load_state_dict(copyStateDict(torch.load('vgg16_bn-6c64b313.pth')))
@@ -159,7 +178,9 @@ if __name__ == '__main__':
     loss_time = 0
     loss_value = 0
     compare_loss = 1
-    total_epochs = 5
+    total_data = len(train_loader)
+    total_epochs = 100
+    adjust_learning_rate_steps = ((20 * total_epochs * total_data) / (10**5 / args.batch_size))
     for epoch in range(total_epochs):
         loss_value = 0
         # if epoch % 50 == 0 and epoch != 0:
@@ -169,8 +190,8 @@ if __name__ == '__main__':
         st = time.time()
         for i, (images, gh_label, mask, _) in enumerate(train_loader):
             # input()
-            index = epoch * len(train_loader) + i
-            if index % 100 == 0 and index != 0:
+            index = epoch * total_data + i
+            if index % max(1, round(adjust_learning_rate_steps)) == 0 and index != 0:
                 step_index += 1
                 adjust_learning_rate(optimizer, args.gamma, step_index)
         
@@ -185,7 +206,7 @@ if __name__ == '__main__':
             #         gh_img = imgproc.cvt2HeatmapImg(gh_img)
             #         img_path = os.path.join("prep", "gt_{}_{}.jpg".format(index, field))
             #         cv2.imwrite(img_path, gh_img)
-            #     img = images[i].permute((1, 2, 0)).cpu().data.numpy()
+            #     img = images[index].permute((1, 2, 0)).cpu().data.numpy()
             #     new_size = gh_img.shape[:2]
             #     new_size = new_size[::-1]
             #     img = cv2.resize(img, new_size)[::,::,::-1] * 255
@@ -236,7 +257,7 @@ if __name__ == '__main__':
             if index % PRINT_INTERVAL == 0 and index > 0:
                 et = time.time()
                 print('epoch {}: ({} / {} / {}) batch || training time for {} batch: {:.2f} seconds || training loss {:.6f} ||'
-                      .format(epoch, index, len(train_loader) * total_epochs, len(train_loader), PRINT_INTERVAL, et-st, loss_value/PRINT_INTERVAL))
+                      .format(epoch, index, total_data * total_epochs, total_data, PRINT_INTERVAL, et-st, loss_value/PRINT_INTERVAL))
                 loss_time = 0
                 loss_value = 0
                 st = time.time()

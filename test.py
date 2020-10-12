@@ -61,8 +61,9 @@ args = parser.parse_args()
 
 
 """ For test images in a folder """
-image_list, _, _ = file_utils.get_files('/storage/upload_complete/')
+# image_list, _, _ = file_utils.get_files('/storage/upload_complete/')
 # image_list, _, _ = file_utils.get_files('/storage/prep/')
+image_list, _, _ = file_utils.get_files('/dataset/crawl/front_cmtnd_resized/test/')
 print(len(image_list))
 
 result_folder = '/storage/result/'
