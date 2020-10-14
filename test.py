@@ -45,7 +45,7 @@ def str2bool(v):
     return v.lower() in ("yes", "y", "true", "t", "1")
 
 parser = argparse.ArgumentParser(description='CRAFT Text Detection')
-# parser.add_argument('--trained_model', default='pretrain/synweights/synweights_front_cmtnd.pth', type=str, help='pretrained model')
+# parser.add_argument('--trained_model', default='pretrain/synweights/synweights_thuann.pth', type=str, help='pretrained model')
 parser.add_argument('--trained_model', default='pretrain/synweights.pth', type=str, help='pretrained model')
 parser.add_argument('--text_threshold', default=0.65, type=float, help='text confidence threshold')
 parser.add_argument('--low_text', default=0.65, type=float, help='text low-bound score')
@@ -63,7 +63,7 @@ args = parser.parse_args()
 """ For test images in a folder """
 # image_list, _, _ = file_utils.get_files('/storage/upload_complete/')
 # image_list, _, _ = file_utils.get_files('/storage/prep/')
-image_list, _, _ = file_utils.get_files('/dataset/crawl/front_cmtnd_resized/test/')
+image_list, _, _ = file_utils.get_files('/dataset/crawl/front_cmtnd_resized/image/')
 print(len(image_list))
 
 result_folder = '/storage/result/'

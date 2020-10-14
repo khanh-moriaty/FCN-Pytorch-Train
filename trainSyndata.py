@@ -107,15 +107,15 @@ if __name__ == '__main__':
 
     #dataloader = syndata(imgname, charbox, imgtxt)
     
-    # dataloader = Synth80k('/datasets/SynthText/', target_size=768)
-    # train_loader = torch.utils.data.DataLoader(
-    #     dataloader,
-    #     batch_size=args.batch_size,
-    #     shuffle=True,
-    #     num_workers=args.batch_size,
-    #     drop_last=True,
-    #     pin_memory=True)
-    
+    dataloader = Synth80k('/datasets/SynthText/', target_size=768)
+    train_loader = torch.utils.data.DataLoader(
+        dataloader,
+        batch_size=args.batch_size,
+        shuffle=True,
+        num_workers=args.batch_size,
+        drop_last=True,
+        pin_memory=True)
+
     # dataloader = Synth80k('/datasets/SynthText/', target_size=768)
     # train_loader = torch.utils.data.DataLoader(
     #     dataloader,
@@ -125,21 +125,21 @@ if __name__ == '__main__':
     #     drop_last=True,
     #     pin_memory=True)
     
-    dataloader = CrawlData('/datasets/SynthText/', target_size=768)
-    train_loader = torch.utils.data.DataLoader(
-        dataloader,
-        batch_size=args.batch_size,
-        shuffle=True,
-        num_workers=args.batch_size,
-        drop_last=True,
-        pin_memory=True)
+    # dataloader = CrawlData('/datasets/SynthText/', target_size=768)
+    # train_loader = torch.utils.data.DataLoader(
+    #     dataloader,
+    #     batch_size=args.batch_size,
+    #     shuffle=True,
+    #     num_workers=args.batch_size,
+    #     drop_last=True,
+    #     pin_memory=True)
     
     #batch_syn = iter(train_loader)
     # prefetcher = data_prefetcher(dataloader)
     # input, target1, target2 = prefetcher.next()
     # print(input.size())
     net = CRAFT()
-    net.load_state_dict(copyStateDict(torch.load('pretrain/synweights/synweights_front_cmtnd.pth')))
+    net.load_state_dict(copyStateDict(torch.load('pretrain/synweights/synweights_thuann.pth')))
     # net.load_state_dict(copyStateDict(torch.load('/data/CRAFT-pytorch/1-7.pth')))
     # net.load_state_dict(copyStateDict(torch.load('/data/CRAFT-pytorch/craft_mlt_25k.pth')))
     # net.load_state_dict(copyStateDict(torch.load('vgg16_bn-6c64b313.pth')))
@@ -179,8 +179,9 @@ if __name__ == '__main__':
     loss_value = 0
     compare_loss = 1
     total_data = len(train_loader)
-    total_epochs = 100
+    total_epochs = 5
     adjust_learning_rate_steps = ((20 * total_epochs * total_data) / (10**5 / args.batch_size))
+    print(adjust_learning_rate_steps)
     for epoch in range(total_epochs):
         loss_value = 0
         # if epoch % 50 == 0 and epoch != 0:
@@ -211,7 +212,6 @@ if __name__ == '__main__':
             #     new_size = new_size[::-1]
             #     img = cv2.resize(img, new_size)[::,::,::-1] * 255
             #     print(img.shape)
-            #     print(img)
             #     img_path = os.path.join("prep", "gt_{}.jpg".format(index))
             #     cv2.imwrite(img_path, img)
             #     print('saved images')
@@ -253,10 +253,10 @@ if __name__ == '__main__':
             optimizer.step()
             loss_value += loss.item()
 
-            PRINT_INTERVAL = 2
+            PRINT_INTERVAL = 30 // args.batch_size
             if index % PRINT_INTERVAL == 0 and index > 0:
                 et = time.time()
-                print('epoch {}: ({} / {} / {}) batch || training time for {} batch: {:.2f} seconds || training loss {:.6f} ||'
+                print('epoch {}: ({} / {} / {}) batch || training time for {} batch: {:.2f} seconds || training loss {:.12f} ||'
                       .format(epoch, index, total_data * total_epochs, total_data, PRINT_INTERVAL, et-st, loss_value/PRINT_INTERVAL))
                 loss_time = 0
                 loss_value = 0

@@ -433,6 +433,7 @@ class craft_base_dataset(data.Dataset):
 
         image = imgproc.normalizeMeanVariance(np.array(image), mean=(0.485, 0.456, 0.406),
                                               variance=(0.229, 0.224, 0.225))
+        
         image = torch.from_numpy(image).float().permute(2, 0, 1)
 
         # region_scores_torch = torch.from_numpy(region_scores / 255).float()
@@ -467,7 +468,7 @@ class Synth80k(craft_base_dataset):
 
     def __getitem__(self, index):
         if self.getTemplate(self.dir, index) != 0:
-            return self.__getitem__((index + 69) % len(self.dir))
+            return self.__getitem__((index * 69 + 6969) % len(self.dir))
         return self.pull_item(index)
 
     def __len__(self):
@@ -486,10 +487,10 @@ class Synth80k(craft_base_dataset):
             js = json.load(f)
         return js['template_id']
 
-    def _cvt2BB(bbox):
-        return [[bbox[2*i:2*(i+1)] for i in range(4)]]
-
     def _getBB(self, js, image):
+
+        def _cvt2BB(bbox):
+            return [[bbox[2*i:2*(i+1)] for i in range(4)]]
 
         data = js['data']
         BB = {x: [[[-1, -1] for _ in range(4)]] for x in CLASSES}
@@ -537,8 +538,7 @@ class Synth80k(craft_base_dataset):
         old_bbox = np.array([[x, y] for x, y in zip(
             old_bbox[::2], old_bbox[1::2])], dtype=np.float32)
         height, width = image.shape[:2]
-        new_bbox = np.array([[0, 0], [width, 0], [0, height], [
-                            width, height]], dtype=np.float32)
+        new_bbox = np.array([[0, 0], [width, 0], [0, height], [width, height]], dtype=np.float32)
         BB, image = perspective(BB, image, old_bbox, new_bbox)
 
         height, width = image.shape[:2]
@@ -552,6 +552,7 @@ class Synth80k(craft_base_dataset):
         new_bbox = np.array([[0, 0], [width, 0], [0, height], [
                             width, height]], dtype=np.float32)
         BB, image = perspective(BB, image, old_bbox, new_bbox)
+        
 
         return BB, image
 
